@@ -420,7 +420,18 @@ class BaseSkill:
                     self._settings[k] = v
         self._initial_settings = copy(self.settings)
 
-        self._start_filewatcher()
+        # starting on ovos-core 0.0.8 a bus event is emitted
+        # all settings.json files are monitored in a single thread
+        self.add_event("ovos.skills.settings_changed", self._handle_settings_changed)
+
+        # account for isolated setups where skills might be in different machines from core
+        if self.settings.get("monitor_own_settings", True):  # TODO change to False in next ovos-core release
+            self._start_filewatcher()
+
+    def _handle_settings_changed(self, message):
+        skill_id = message.data.get("skill_id", "")
+        if skill_id == self.skill_id:
+            self.__handle_settings_file_change()
 
     # method not in mycroft-core
     def _init_skill_gui(self):
@@ -440,7 +451,8 @@ class BaseSkill:
     def _start_filewatcher(self):
         if self._settings_watchdog is None and isfile(self._settings.path):
             self._settings_watchdog = FileWatcher([self._settings.path],
-                                                  callback=self._handle_settings_file_change,
+                                                  callback=self.__handle_settings_file_change,
+                                                  recursive=True,
                                                   ignore_creation=True)
 
     # method not present in mycroft-core
@@ -454,7 +466,7 @@ class BaseSkill:
                 self.settings_manager.save_meta()
 
     # method not present in mycroft-core
-    def _handle_settings_file_change(self, path):
+    def __handle_settings_file_change(self, path: str=None):
         if self._settings:
             self._settings.reload()
         if self.settings_change_callback:
